@@ -3,7 +3,6 @@ import os
 import re
 import html
 import getpass
-import json
 import logging as log
 
 log.basicConfig(level=100, filename='log.log', format='%(asctime)s - %(levelname)s: %(message)s')
@@ -77,7 +76,7 @@ class PolitoWeb:
         # seleziona la materia e imposta i cookie per la materia corrente in self.matCookie
         # inoltre crea al cartella per ospirate i file scaricati
         # voglio un nome cartella che sia fattibile: tolgo i caratteri non alfabetici
-        nomeMat = (re.sub(r'([^\s\w]|_)+', '', self.listaMat[id][2])).strip()
+        nomeMat = self.purgeString(self.listaMat[id][2].strip())
         cartellaDaCreare = os.path.join(self.dlFolder, nomeMat)
         if not os.path.exists(cartellaDaCreare):
             os.makedirs(cartellaDaCreare)
@@ -107,11 +106,13 @@ class PolitoWeb:
                 if i['type'] == 'dir':
                     if i['name'].startswith('ZZZZZ'): continue # si tratta delle videolezioni
                     # creo la cartella su cui procedere ricorsivamente
-                    cartellaDaCreare = os.path.join(cartella, i['name'])
+                    name = self.purgeString(i['name']) # pulizia dei caratteri
+                    cartellaDaCreare = os.path.join(cartella, name)
+
                     if not os.path.exists(cartellaDaCreare):
                         os.makedirs(cartellaDaCreare)
-                    print('Cartella: ' + i['name'])
-                    newPath =  self.myPathJoin(cartellaDaCreare, i['name'])
+                    print('Cartella: ' + name)
+                    newPath =  self.myPathJoin(cartellaDaCreare, name)
                     self.getPathContent(cartellaDaCreare, newPath, i['code'])
                 elif i['type'] == 'file':
                     # scarico i file
@@ -123,6 +124,9 @@ class PolitoWeb:
             return a + b
         else:
             return a + '/' + b
+
+    def purgeString(self, str):
+        return re.sub('[^a-zA-Z0-9 ]', '', str.strip())
 
     def downloadFile(self, cartella, name, path, code):
         with requests.session() as s:
