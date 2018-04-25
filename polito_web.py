@@ -139,5 +139,4 @@ class PolitoWeb:
         while x not in range(1,i):
             x=int(input("Materia: "))
         self.selectMat(x-1)
-        os.system("pause")
         return True
