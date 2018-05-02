@@ -65,3 +65,5 @@ target/
 secret.py
 *.bat
 
+# pycharm
+.idea/
