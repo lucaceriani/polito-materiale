@@ -3,9 +3,6 @@ import os
 import re
 import html
 import getpass
-import logging as log
-
-log.basicConfig(level=100, filename='log.log', format='%(asctime)s - %(levelname)s: %(message)s')
 
 
 class PolitoWeb:
@@ -15,12 +12,13 @@ class PolitoWeb:
     mat_cookie = None
     lista_mat = None
     working_folder = None
+    last_time_udpated = None
 
     headers = {'User-Agent': 'python-requests'}
-    base_url = 'https://didattica.polito.it/pls/portal30/sviluppo.filemgr.handler'
-
-    def __init__(self):
-        log.debug("Creata sessione PolitoWeb")
+    base_url = 'https://didattica.polito.it/pls/portal30/'
+    handler_url = base_url + 'sviluppo.filemgr.handler'
+    get_process_url = base_url + 'sviluppo.filemgr.get_process_amount'
+    file_last_update = 'last_update.txt'
 
     def set_user_agent(self, ua):
         self.headers['User-Agent'] = ua
@@ -31,8 +29,10 @@ class PolitoWeb:
             os.makedirs(dl_folder)
         self.dl_folder = dl_folder
 
-    # @return boolean
     def login(self, username=None, password=None):
+        """
+        :rtype: bool
+        """
         if (username is None) and (password is None):
             user = input("Username: ")
             passw = getpass.getpass("Password: ")
@@ -50,7 +50,6 @@ class PolitoWeb:
             if len(rls) > 0:
                 relaystate = rls[0]
             else:
-                log.error("Credenziali errate! Utente: %s", user)
                 return False
             samlresponse = html.unescape(re.findall('name="SAMLResponse".*value="(.*)"', r.text)[0])
             s.post('https://www.polito.it/Shibboleth.sso/SAML2/POST',
@@ -63,7 +62,6 @@ class PolitoWeb:
             if r.url == "https://didattica.polito.it/portal/page/portal/home/Studente":  # Login Successful
                 login_cookie = s.cookies
             else:
-                log.critical("Qualcosa nel login non ha funzionato!")
                 return False
         # se sono arrivato qui vuol dire che sono loggato
         self.login_cookie = login_cookie
@@ -100,12 +98,22 @@ class PolitoWeb:
             # se non specifico il codice vuole dire che sono nella cartella iniziale e quindi
             # non devo inviare l'attributo code altrimenti mi esce un risultato non valido (??)
             if code != '0':
-                json_result = s.get(self.base_url, params={'action': 'list', 'path': path, 'code': code},
+                json_result = s.get(self.handler_url, params={'action': 'list', 'path': path, 'code': code},
                                     headers=self.headers)
             else:
-                json_result = s.get(self.base_url, params={'action': 'list', 'path': path}, headers=self.headers)
+                json_result = s.get(self.handler_url, params={'action': 'list', 'path': path}, headers=self.headers)
 
             contenuto = json_result.json()
+
+            # per controllare gli aggiornamenti mi serve il codice della cartella
+            # lo prendo dal parent code del primo elemento che mi capita
+            if path == '/':
+                folder_code = contenuto['result'][0]['parent_code']
+                ultimo_aggiornamento_remoto = self._last_update_remote(folder_code)
+                if not self._need_to_update(cartella, folder_code):
+                    print("Corso già aggiornato! (premi invio)")
+                    input()
+                    return
 
             for i in contenuto['result']:
                 if i['type'] == 'dir':
@@ -126,6 +134,12 @@ class PolitoWeb:
                     print('File: ' + i['nomefile'])
                     self.download_file(cartella, i['nomefile'], path, i['code'])
 
+            if path == '/':
+                # salvo l'ultimo aggiornamento remoto
+                file_da_controllare = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
+                with open(file_da_controllare, 'w') as f:
+                    return f.write(ultimo_aggiornamento_remoto)
+
     @staticmethod
     def my_path_join(a, b):
         if a.endswith('/'):
@@ -135,12 +149,12 @@ class PolitoWeb:
 
     @staticmethod
     def purge_string(a):
-        return re.sub('[^a-zA-Z0-9 ]', '', a.strip())
+        return re.sub('[^a-zA-Z0-9 ]', '', a).strip()
 
     def download_file(self, cartella, name, path, code):
         with requests.session() as s:
             s.cookies = self.mat_cookie
-            file = s.get(self.base_url, params={'action': 'download', 'path': (path + '/' + name), 'code': code},
+            file = s.get(self.handler_url, params={'action': 'download', 'path': (path + '/' + name), 'code': code},
                          allow_redirects=True, headers=self.headers)
             open(os.path.join(cartella, name), 'wb').write(file.content)
 
@@ -154,3 +168,33 @@ class PolitoWeb:
             x = int(input("Materia: "))
         self.select_mat(x-1)
         return True
+
+    def _last_update_remote(self, folder_code):
+        with requests.session() as s:
+            s.cookies = self.mat_cookie
+            json_result = s.get(self.get_process_url, params={'items': folder_code})
+            print(json_result.text)
+            if json_result:
+                json_result = json_result.json()
+                return json_result['result']['lastUpload']
+            else:
+                print("Impossibile stabilire la data dell'ultimo aggiornamento")
+
+    def _last_update_local(self, cartella):
+        file_da_controllare = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
+        if os.path.isfile(file_da_controllare):
+            with open(file_da_controllare, 'r') as f:
+                return f.read()
+        else:
+            return None
+
+    def _need_to_update(self, cartella, folder_code):
+        local = self._last_update_local(cartella)
+        remote = self._last_update_remote(folder_code)
+        if local is not None and remote is not None:
+            if local < remote:
+                return True
+            else:
+                return False
+        else:
+            return True  # se non trovo niente è come se dovessi aggiornare tutto
