@@ -173,12 +173,12 @@ class PolitoWeb:
         with requests.session() as s:
             s.cookies = self.mat_cookie
             json_result = s.get(self.get_process_url, params={'items': folder_code})
-            print(json_result.text)
             if json_result:
                 json_result = json_result.json()
                 return json_result['result']['lastUpload']
             else:
                 print("Impossibile stabilire la data dell'ultimo aggiornamento")
+                return None
 
     def _last_update_local(self, cartella):
         file_da_controllare = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
