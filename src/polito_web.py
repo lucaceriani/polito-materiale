@@ -11,25 +11,51 @@ class PolitoWeb:
     login_cookie = None
     mat_cookie = None
     lista_mat = None
-    working_folder = None
-    last_time_udpated = None
+    last_update_remote = None
+    last_update_local = None
+
+    nome_file = 'nomefile'
 
     headers = {'User-Agent': 'python-requests'}
     base_url = 'https://didattica.polito.it/pls/portal30/'
     handler_url = base_url + 'sviluppo.filemgr.handler'
     get_process_url = base_url + 'sviluppo.filemgr.get_process_amount'
-    file_last_update = 'last_update.txt'
+    file_last_update = '_last_update.txt'
+
+    def __init__(self):
+        print("PoliTo Materiale - v 1.0.0", end="\n\n")
+
+    """
+        === public functions ===
+    """
 
     def set_user_agent(self, ua):
         self.headers['User-Agent'] = ua
 
     def set_dl_folder(self, dl_folder):
-        # se la cartella non esiste la crea
-        if not os.path.exists(dl_folder):
-            os.makedirs(dl_folder)
+        self._mkdir_if_not_exists(dl_folder)
         self.dl_folder = dl_folder
 
+    def set_nome_file(self, nome):
+        if nome == 'web':
+            self.nome_file = 'name'
+        elif nome == 'nomefile':
+            self.nome_file = 'nomefile'
+
     def login(self, username=None, password=None):
+        print("Credenziali di accesso per http://didattica.polito.it")
+        while not self._login(username, password):
+            print("Impossibile effettuare il login, riprovare!")
+
+    def menu(self):
+        while self._menu():
+            self._clear()
+
+    """
+        === private functions ===
+    """
+
+    def _login(self, username, password):
         """
         :rtype: bool
         """
@@ -67,22 +93,24 @@ class PolitoWeb:
         self.login_cookie = login_cookie
         return True
 
-    def get_lista_mat(self):
+    def _get_lista_mat(self):
         # riceve la lista della materie sulla pagina principale del portale
         with requests.session() as s:
             s.cookies = self.login_cookie
             hp = s.get('https://didattica.polito.it/portal/page/portal/home/Studente', headers=self.headers)
             self.lista_mat = re.findall("cod_ins=(.+)&incarico=([0-9]+).+>(.+)[ ]*<", hp.text)
 
-    def select_mat(self, indice):
-        # seleziona la materia e imposta i cookie per la materia corrente in self.matCookie
-        # inoltre crea al cartella per ospirate i file scaricati
-        # voglio un nome cartella che sia fattibile: tolgo i caratteri non alfabetici
-        nome_mat = self.purge_string(self.lista_mat[indice][2])
+    def _select_mat(self, indice):
+        """
+        Seleziona la materia, imposta i cookie per la materia corrente in
+        self.mat_cookie,  crea al cartella per ospirate i file scaricati e
+        ricava le informazioni sul last_update sia local che remote
+        :param indice: indice della materia nella lista (self.lista_mat)
+        """
+
+        nome_mat = self._purge_string(self.lista_mat[indice][2])
         cartella_da_creare = os.path.join(self.dl_folder, nome_mat)
-        if not os.path.exists(cartella_da_creare):
-            os.makedirs(cartella_da_creare)
-        self.working_folder = cartella_da_creare
+        self._mkdir_if_not_exists(cartella_da_creare)
 
         with requests.session() as s:
             s.cookies = self.login_cookie
@@ -90,9 +118,17 @@ class PolitoWeb:
                   params={'cod_ins': self.lista_mat[indice][0], 'incarico': self.lista_mat[indice][1]},
                   headers=self.headers)
             self.mat_cookie = s.cookies
-            self.get_path_content(self.working_folder, '/')
+            self._get_path_content(cartella_da_creare, '/')
 
-    def get_path_content(self, cartella, path, code='0'):
+    def _get_path_content(self, cartella, path, code='0'):
+        """
+        Funzione principale che si occupa ricorsivamete di scaricare i file
+        :param cartella: la cartella il cui si sta lavorando (non posso usare)
+                         self.working_folse perché è una funzione riscorsiva
+        :param path: il persorso online
+        :param code: il codice della cartella in cui mi trovo online
+        """
+
         with requests.session() as s:
             s.cookies = self.mat_cookie
             # se non specifico il codice vuole dire che sono nella cartella iniziale e quindi
@@ -109,92 +145,173 @@ class PolitoWeb:
             # lo prendo dal parent code del primo elemento che mi capita
             if path == '/':
                 folder_code = contenuto['result'][0]['parent_code']
-                ultimo_aggiornamento_remoto = self._last_update_remote(folder_code)
-                if not self._need_to_update(cartella, folder_code):
-                    print("Corso già aggiornato! (premi invio)")
-                    input()
-                    return
+                self._need_to_update(cartella, folder_code)
+                self._save_update_file(cartella)
 
             for i in contenuto['result']:
-                if i['type'] == 'dir':
-                    if i['name'].startswith('ZZZZZ'):  # si tratta delle videolezioni
-                        continue
+                if i['name'].startswith('ZZZZZ'):  # si tratta delle videolezioni
+                    continue
 
+                if i['type'] == 'dir':
                     # creo la cartella su cui procedere ricorsivamente
-                    name = self.purge_string(i['name'])  # pulizia dei caratteri
+                    name = self._purge_string(i['name'])  # pulizia dei caratteri
                     cartella_da_creare = os.path.join(cartella, name)
 
-                    if not os.path.exists(cartella_da_creare):
-                        os.makedirs(cartella_da_creare)
+                    self._mkdir_if_not_exists(cartella_da_creare)
                     print('Cartella: ' + name)
-                    new_path = self.my_path_join(cartella_da_creare, name)
-                    self.get_path_content(cartella_da_creare, new_path, i['code'])
+                    new_path = self._my_path_join(cartella_da_creare, name)
+
+                    # procedo ricorsivamente
+                    self._get_path_content(cartella_da_creare, new_path, i['code'])
+
                 elif i['type'] == 'file':
-                    # scarico i file
-                    print('File: ' + i['nomefile'])
-                    self.download_file(cartella, i['nomefile'], path, i['code'])
+                    if self._need_to_update_this(cartella, i[self.nome_file], i['date']):
+                        # scarico il file
+                        print('[DOWNLOAD] ' + i[self.nome_file])
+                        self._download_file(cartella, i[self.nome_file], path, i['code'])
+                    else:
+                        print('[OK] ' + i[self.nome_file])
 
-            if path == '/':
-                # salvo l'ultimo aggiornamento remoto
-                file_da_controllare = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
-                with open(file_da_controllare, 'w') as f:
-                    return f.write(ultimo_aggiornamento_remoto)
-
-    @staticmethod
-    def my_path_join(a, b):
-        if a.endswith('/'):
-            return a + b
-        else:
-            return a + '/' + b
-
-    @staticmethod
-    def purge_string(a):
-        return re.sub('[^a-zA-Z0-9 ]', '', a).strip()
-
-    def download_file(self, cartella, name, path, code):
+    def _download_file(self, cartella, name, path, code):
         with requests.session() as s:
             s.cookies = self.mat_cookie
             file = s.get(self.handler_url, params={'action': 'download', 'path': (path + '/' + name), 'code': code},
                          allow_redirects=True, headers=self.headers)
-            open(os.path.join(cartella, name), 'wb').write(file.content)
+            try:
+                name = self._purge_string(name)
+                open(os.path.join(cartella, name), 'wb').write(file.content)
+            except ValueError:
+                # nel caso in cui non si riuscisse a salvere il file
+                # si pulisce meglio il nome
+                name = self._purge_string(name, 'strong')
+                open(os.path.join(cartella, name), 'wb').write(file.content)
 
-    def menu(self):
+    def _menu(self):
+
+        # se non ho ancora salvato la lista delle materie epr questa sessione
+        # la salvo il self.lista_mat
+        if self.lista_mat is None:
+            self._get_lista_mat()
+
         i = 1
         for mat in self.lista_mat:
             print('[%.2d] %s' % (i, mat[2]))
             i += 1
         x = -1
         while x not in range(1, i):
-            x = int(input("Materia: "))
-        self.select_mat(x-1)
+            x = input("Materia: ")
+            if x.isnumeric():
+                x = int(x)
+            else:
+                continue
+
+        self._select_mat(x - 1)
+
+        print('--- Fine! ---     premi INVIO')
+        input()
         return True
 
     def _last_update_remote(self, folder_code):
+        """
+        imposta self.last_update_remote
+        :param folder_code: codice della cartella online
+        """
         with requests.session() as s:
             s.cookies = self.mat_cookie
             json_result = s.get(self.get_process_url, params={'items': folder_code})
             if json_result:
                 json_result = json_result.json()
-                return json_result['result']['lastUpload']
+                self.last_update_remote = json_result['result']['lastUpload']
             else:
                 print("Impossibile stabilire la data dell'ultimo aggiornamento")
-                return None
+                self.last_update_remote = None
 
     def _last_update_local(self, cartella):
+        """
+        imposta self.last_update_local
+        :param cartella: la cartella in cui sto lavorando
+        """
+
         file_da_controllare = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
         if os.path.isfile(file_da_controllare):
             with open(file_da_controllare, 'r') as f:
-                return f.read()
+                self.last_update_local = f.read()
         else:
-            return None
+            self.last_update_local = None
 
     def _need_to_update(self, cartella, folder_code):
-        local = self._last_update_local(cartella)
-        remote = self._last_update_remote(folder_code)
-        if local is not None and remote is not None:
-            if local < remote:
+        self._last_update_local(cartella)
+        self._last_update_remote(folder_code)
+        if self.last_update_local is not None and self.last_update_remote is not None:
+            if self.last_update_local < self.last_update_remote:
                 return True
             else:
                 return False
         else:
             return True  # se non trovo niente è come se dovessi aggiornare tutto
+
+    def _save_update_file(self, cartella):
+        """
+        salva il file per tenere traccia dell'ultimo aggiornamento
+        :return:
+        """
+
+        update_file = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
+        with open(update_file, 'w') as f:
+            f.write(self.last_update_remote)
+
+    def _need_to_update_this(self, cartella, nomefile, data):
+        """
+        Restituiisce vero nel caso in cui il file è più aggiornato
+        rispetto alla versione locale o in caso il file non
+        ci sia prorpio nella versione locale. Per la versione locale
+        controlla sia con _purge_string che con _purge_string_strong
+        :param data: la data del file che sto considerando
+        :return: bool
+        """
+
+        nomefile = self._purge_string(nomefile)
+        file_da_controllare = os.path.join(*[self.dl_folder, cartella, nomefile])
+
+        if not os.path.isfile(file_da_controllare):
+            nomefile = self._purge_string(nomefile, 'strong')
+            file_da_controllare = os.path.join(*[self.dl_folder, cartella, nomefile])
+            if not os.path.isfile(file_da_controllare):
+                return True
+
+        if self.last_update_local is None:
+            return True
+
+        if self.last_update_local < data:
+            return True
+
+        return False
+
+    """
+        === static methods ===
+    """
+    @staticmethod
+    def _my_path_join(a, b):
+        if a.endswith('/'):
+            return a + b
+        else:
+            return a + '/' + b
+
+    def _purge_string(self, a, strong=None):
+        if strong is None:
+            return re.sub('[/:*?\"<>|]', '', a).strip()
+        elif strong == 'strong':
+            # se è presente l'attributo strong faccio il purge_string
+            # leggero e poi quello strong
+            return re.sub('[^a-zA-Z0-9]', '', self._purge_string(a)).strip()
+        else:
+            return a
+
+    @staticmethod
+    def _mkdir_if_not_exists(folder):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+    @staticmethod
+    def _clear():
+        os.system('cls' if os.name == 'nt' else 'clear')
