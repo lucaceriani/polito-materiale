@@ -24,7 +24,7 @@ class PolitoWeb:
     file_last_update = '.last_update'  # il puto serve a nasconderlo sui sistemi UNIX
 
     def __init__(self):
-        print("PoliTo Materiale - v 1.0.1", end="\n\n")
+        print("PoliTo Materiale - v 1.0.2", end="\n\n")
 
     """
         === public functions ===
