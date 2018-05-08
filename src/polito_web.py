@@ -3,6 +3,7 @@ import os
 import re
 import html
 import getpass
+import subprocess
 
 
 class PolitoWeb:
@@ -20,7 +21,7 @@ class PolitoWeb:
     base_url = 'https://didattica.polito.it/pls/portal30/'
     handler_url = base_url + 'sviluppo.filemgr.handler'
     get_process_url = base_url + 'sviluppo.filemgr.get_process_amount'
-    file_last_update = '_last_update.txt'
+    file_last_update = '.last_update'  # il puto serve a nasconderlo sui sistemi UNIX
 
     def __init__(self):
         print("PoliTo Materiale - v 1.0.1", end="\n\n")
@@ -239,9 +240,10 @@ class PolitoWeb:
         :param cartella: la cartella in cui sto lavorando
         """
 
-        file_da_controllare = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
-        if os.path.isfile(file_da_controllare):
-            with open(file_da_controllare, 'r') as f:
+        file_da_controllare_nt = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
+
+        if os.path.isfile(file_da_controllare_nt):
+            with open(file_da_controllare_nt, 'r') as f:
                 self.last_update_local = f.read()
         else:
             self.last_update_local = None
@@ -263,9 +265,18 @@ class PolitoWeb:
         :return:
         """
 
+        # se il file esiste già bisogna usa 'r+' e non 'w' per motivi
+        # di windows di operazioni su file nascosti
         update_file = os.path.join(*[self.dl_folder, cartella, self.file_last_update])
-        with open(update_file, 'w') as f:
+
+        mode = 'r+' if os.path.isfile(update_file) else 'w'
+
+        with open(update_file, mode) as f:
             f.write(self.last_update_remote)
+
+        # nascondo il file se sono su windows se l'ho creato per la prima volta (modo 'w')
+        if os.name == 'nt' and mode == 'w':
+            self._hide_file_in_win32(update_file)
 
     def _need_to_update_this(self, cartella, nomefile, data):
         """
@@ -322,3 +333,15 @@ class PolitoWeb:
     @staticmethod
     def _clear():
         os.system('cls' if os.name == 'nt' else 'clear')
+
+    @staticmethod
+    def _hide_file_in_win32(file_da_nascondere):
+        """
+        Funzione che permette di nascondere un file su windows
+        in particolare quello del last_update
+        :param file_da_nascondere: path del file na nascondere
+        """
+        try:
+            subprocess.call(['attrib', '+H', file_da_nascondere])
+        except ValueError:
+            print("[  ERRORE  ] Impossibile nascondere il file di timestamp")
