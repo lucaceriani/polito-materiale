@@ -23,7 +23,7 @@ class PolitoWeb:
     file_last_update = '_last_update.txt'
 
     def __init__(self):
-        print("PoliTo Materiale - v 1.0.0", end="\n\n")
+        print("PoliTo Materiale - v 1.0.1", end="\n\n")
 
     """
         === public functions ===
@@ -165,12 +165,19 @@ class PolitoWeb:
                     self._get_path_content(cartella_da_creare, new_path, i['code'])
 
                 elif i['type'] == 'file':
-                    if self._need_to_update_this(cartella, i[self.nome_file], i['date']):
-                        # scarico il file
-                        print('[DOWNLOAD] ' + i[self.nome_file])
-                        self._download_file(cartella, i[self.nome_file], path, i['code'])
+                    if not re.findall('\.(\w{1,4})', i[self.nome_file]):
+                        # se non trovo un'estensione uso il nome del file normale
+                        nome_del_file = i['nomefile']
+                        print("[ WARNING  ] Nessuna estensione trovata. Uso il nome originale!")
                     else:
-                        print('[OK] ' + i[self.nome_file])
+                        nome_del_file = i[self.nome_file]
+
+                    if self._need_to_update_this(cartella, nome_del_file, i['date']):
+                        # scarico il file
+                        print('[ DOWNLOAD ] ' + nome_del_file)
+                        self._download_file(cartella, nome_del_file, path, i['code'])
+                    else:
+                        print('[    OK    ] ' + nome_del_file)
 
     def _download_file(self, cartella, name, path, code):
         with requests.session() as s:
@@ -303,7 +310,7 @@ class PolitoWeb:
         elif strong == 'strong':
             # se è presente l'attributo strong faccio il purge_string
             # leggero e poi quello strong
-            return re.sub('[^a-zA-Z0-9]', '', self._purge_string(a)).strip()
+            return re.sub('[^a-zA-Z0-9 .]', '', self._purge_string(a)).strip()
         else:
             return a
 
