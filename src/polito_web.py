@@ -1,19 +1,20 @@
-import requests
+import getpass
+import html
 import os
 import re
-import html
-import getpass
 import subprocess
+
+import requests
 
 
 class PolitoWeb:
-
     dl_folder = None
     login_cookie = None
     mat_cookie = None
     lista_mat = None
     last_update_remote = None
     last_update_local = None
+    MAX_RETRY = 3  # Numero massimo per i tentativi di login
 
     nome_file = 'nomefile'
 
@@ -21,10 +22,7 @@ class PolitoWeb:
     base_url = 'https://didattica.polito.it/pls/portal30/'
     handler_url = base_url + 'sviluppo.filemgr.handler'
     get_process_url = base_url + 'sviluppo.filemgr.get_process_amount'
-    file_last_update = '.last_update'  # il puto serve a nasconderlo sui sistemi UNIX
-
-    def __init__(self):
-        print("PoliTo Materiale - v 1.0.2", end="\n\n")
+    file_last_update = '.last_update'  # il punto serve a nasconderlo sui sistemi UNIX
 
     """
         === public functions ===
@@ -44,9 +42,20 @@ class PolitoWeb:
             self.nome_file = 'nomefile'
 
     def login(self, username=None, password=None):
-        print("Credenziali di accesso per http://didattica.polito.it")
-        while not self._login(username, password):
-            print("Impossibile effettuare il login, riprovare!")
+        i = 1  # Contatore tentativi
+        if username is None and password is None:
+            try:
+                while not self._login(username, password) and i < self.MAX_RETRY:
+                    print("Impossibile effettuare il login, riprova!")
+                    i = i + 1
+            except EOFError:
+                print("")
+                return None
+        else:
+            if not self._login(username, password):
+                print("Impossibile effettuare il login, riprova!")
+        if i == self.MAX_RETRY:
+            print("Impossibile effettuare il login dopo " + str(self.MAX_RETRY) + " tentativi.")
 
     def menu(self):
         while self._menu():
@@ -61,13 +70,14 @@ class PolitoWeb:
         :rtype: bool
         """
         if (username is None) and (password is None):
+            print("Credenziali di accesso per http://didattica.polito.it")
             user = input("Username: ")
             passw = getpass.getpass("Password: ")
         else:
             user = username
             passw = password
 
-        print("Logging in...")
+        print("Logging in...", end="", flush=True)
 
         with requests.session() as s:
             s.get('https://idp.polito.it/idp/x509mixed-login', headers=self.headers)
@@ -92,6 +102,7 @@ class PolitoWeb:
                 return False
         # se sono arrivato qui vuol dire che sono loggato
         self.login_cookie = login_cookie
+        print(" Done!")
         return True
 
     def _get_lista_mat(self):
@@ -195,19 +206,24 @@ class PolitoWeb:
                 open(os.path.join(cartella, name), 'wb').write(file.content)
 
     def _menu(self):
-
-        # se non ho ancora salvato la lista delle materie epr questa sessione
+        # se non ho ancora salvato la lista delle materie per questa sessione
         # la salvo il self.lista_mat
         if self.lista_mat is None:
             self._get_lista_mat()
 
         i = 1
+        print("\nElenco del materiale disponibile - (CTRL+D per terminare)")
         for mat in self.lista_mat:
             print('[%.2d] %s' % (i, mat[2]))
             i += 1
+        print("(Il download verrà effettuato nella cartella: " + self.dl_folder + ")")
         x = -1
         while x not in range(1, i):
-            x = input("Materia: ")
+            try:
+                x = input("Materia: ")
+            except EOFError:
+                print()
+                return False  # Exit from while cycle of self.main()
             if x.isnumeric():
                 x = int(x)
             else:
@@ -308,6 +324,7 @@ class PolitoWeb:
     """
         === static methods ===
     """
+
     @staticmethod
     def _my_path_join(a, b):
         if a.endswith('/'):
@@ -327,8 +344,8 @@ class PolitoWeb:
 
     @staticmethod
     def _mkdir_if_not_exists(folder):
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
 
     @staticmethod
     def _clear():
