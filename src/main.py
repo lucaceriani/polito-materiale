@@ -10,11 +10,12 @@ if __name__ == "__main__":
     sess = PolitoWeb()
 
     # Imposto la cartella di download di default
-    home = os.path.expanduser("~")
-    if sys.platform.startswith("linux") or sys.platform.startswith("darwin"):
-        sess.set_dl_folder(home + "/polito-materiale")
-    elif sys.platform.startswith("win"):
+    
+    home = os.path.expanduser('~')
+    if sys.platform.startswith('win'):
         sess.set_dl_folder(home + "\\polito-materiale")
+    else:
+        sess.set_dl_folder(home + "/polito-materiale")
 
     # Togliere il commento dalla riga seguente e modificarlo nel caso si volesse settare
     # una cartella per il download diversa da quella di default
