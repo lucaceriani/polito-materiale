@@ -6,7 +6,7 @@ from polito_web import PolitoWeb
 if __name__ == "__main__":
 
     # Creo la sessione.
-    print("PoliTo Materiale - v 1.1.2", end="\n")
+    print("PoliTo Materiale - v 1.2.0", end="\n")
     sess = PolitoWeb()
 
     # Imposto la cartella di download di default
