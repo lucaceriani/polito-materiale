@@ -119,7 +119,7 @@ class PolitoWeb:
                 headers=self.headers,
             )
             if (
-                r.url == "https://didattica.polito.it/portal/page/portal/home/Studente"
+                r.url == "https://didattica.polito.it/pls/portal30/sviluppo.pagina_studente_2016.main"
             ):  # Login Successful
                 login_cookie = s.cookies
             else:
